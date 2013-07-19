@@ -85,7 +85,7 @@ var onLoad = function($) {
 		try { return JSON.parse(value); } catch (e) { return null; }
 	};
   
-  var handleChinese = function(given, correct) {
+  var skipAlertDueToChineseTones = function(given, correct) {
     // Return true if typo check should be skipped
     var TONE_REGEX = /(\d)\b/g;
     var tones = function(str) {
@@ -109,7 +109,7 @@ var onLoad = function($) {
     return false;
   };
   
-  var handleFrench = function(given, correct) {
+  var skipAlertDueToFrenchArticles = function(given, correct) {
     var ARTICLES = [ 'le', 'la', 'les', 'un', 'une', 'des' ];
     var regex    = new RegExp('\\b(' + ARTICLES.join('|') + ')\\b', 'gi');
     var article  = function(str) {
@@ -126,40 +126,41 @@ var onLoad = function($) {
     return false;
   };
 
-	var prev_q;
-	var check_answers = function(input) {
-		var q = get_question();
-		if (q === prev_q) {
-			// Skip typo check the on second time regardless of given answer
-			return true;
-		}
+  var prev_q;
+  var check_answers = function(input) {
+  var q = get_question();
+  if (q === prev_q) {
+    // Skip typo check the on second time regardless of given answer
+    return true;
+  }
 
-		var given    = $(input).val();
-		//var correct  = get_thing_by_q(q).answer;
-		var acceptable = get_thing_by_q(q).acceptable;
+    var given    = $(input).val();
+    //var correct  = get_thing_by_q(q).answer;
+    var acceptable = get_thing_by_q(q).acceptable;
     var category = MEMRISE.garden.session.category.name;
 
     console.log(acceptable.length+" options: "+acceptable);
-    var dist = 100;
+    var bestDist = 100;
+    var bestDistAnswer = "";
     for (i in acceptable) {
       var correct = acceptable[i];
-      
-      if (category === 'Chinese') {
-        //if (handleChinese(given, correct)) return true;
-      } else if (category === 'French') {
-        //if (handleFrench(given, correct)) return true;
-      }
 
-      dist = Math.min( dist, compare(given, correct) );  //Keep track of the smallest Levenshtein distance 
-      console.log(given+": "+dist);
-      if (dist == 0) return true;                        //If given perfectly matches one of the alternatives
+      var nextDist = compare(given, correct);
+      if (bestDist == 0) return true;         //If given perfectly matches one of the alternatives
+      if (nextDist<bestDist) {
+        bestDist = nextDist;                  //Keep track of the smallest Levenshtein distance 
+        bestDistAnswer = correct;
+      }
       prev_q = q;
       
     }  //for loop that chooses a new value for correct
 
-    console.log("End of the list: "+dist);
-    if (dist > 0 && dist <= 2) return false;
-		return true;
+    switch (category) {
+      case 'Chinese': if (skipAlertDueToChineseTones(  given, correct)) return true; break;
+      case 'French' : if (skipAlertDueToFrenchArticles(given, correct)) return true; break;
+    }
+    if (bestDist > 0 && bestDist <= 2) return false;  //Do not skip the warning popup
+		return true;                                      //Do skip the warning popup
 	};
 
   
