@@ -3,7 +3,7 @@
 // @description    Makes Memrise more forgiving on typos
 // @match          http://www.memrise.com/course/*/garden/*
 // @match          http://www.memrise.com/garden/water/*
-// @version        0.1.7
+// @version        0.1.8
 // @updateURL      https://userscripts.org/scripts/source/167003.meta.js
 // @downloadURL    https://userscripts.org/scripts/source/167003.user.js
 // @grant          none
@@ -48,10 +48,15 @@ var onLoad = function($) {
 				// whitespace, perhaps because they are written by users who
 				// may accidentally put spaces in the end
 				var question = thing.columns[thinguser.column_b].val;
+        var alts     = thing.columns[thinguser.column_a].alts;  //sometimes the array is full of strings, sometimes objects {id:1, val:"foo"}
+        for (i in alts) alts[i] = (typeof(alts[i])=="string") ? alts[i].replace("_","") : alts[i].val.replace("_","");
+        
 				if ($.trim(question) === $.trim(str)) {
+        console.log(thing.columns[thinguser.column_a].val+" plus "+thing.columns[thinguser.column_a].accepted.length+" & "+alts.length);
 					return {
-						answer   : thing.columns[thinguser.column_a].val,
-						question : thing.columns[thinguser.column_b].val
+						question  : question,
+						answer    : thing.columns[thinguser.column_a].val,
+            acceptable:[thing.columns[thinguser.column_a].val].concat( thing.columns[thinguser.column_a].accepted , alts )
 					};
 				}
 			}
@@ -79,80 +84,86 @@ var onLoad = function($) {
 		}
 		try { return JSON.parse(value); } catch (e) { return null; }
 	};
+  
+  var skipAlertDueToChineseTones = function(given, correct) {
+    // Return true if typo check should be skipped
+    var TONE_REGEX = /(\d)\b/g;
+    var tones = function(str) {
+      return str.match(TONE_REGEX);
+    };
 
-	var prev_q;
-	var check_answer = function(input) {
-		var q = get_question();
-		if (q === prev_q) {
-			// Skip typo check the on second time regardless of given answer
-			return true;
-		}
+    var correctTones = tones(correct);
+    if (correctTones) {
+      if (LSget('forgive-typos-pinyin-disable') === true) {
+        return true;
+      }
 
-		var given    = $(input).val();
-		var correct  = get_thing_by_q(q).answer;
-		var category = MEMRISE.garden.session.category.name;
+      var givenTones = tones(given);
+      if (givenTones.join() !== correctTones.join()) {
+        // If tones don't match; skip typo check, i.e. typo check
+        // should only apply for the pinyin
+        return true;
+      }
+    }
 
-		if (category === 'Chinese') {
-			// Return true if typo check should be skipped
-			var handleChinese = function(given, correct) {
-				var TONE_REGEX = /(\d)\b/g;
-				var tones = function(str) {
-					return str.match(TONE_REGEX);
-				};
+    return false;
+  };
+  
+  var skipAlertDueToFrenchArticles = function(given, correct) {
+    var ARTICLES = [ 'le', 'la', 'les', 'un', 'une', 'des' ];
+    var regex    = new RegExp('\\b(' + ARTICLES.join('|') + ')\\b', 'gi');
+    var article  = function(str) {
+      var m = str.match(regex);
+      return m && m[0];
+    };
 
-				var correctTones = tones(correct);
-				if (correctTones) {
-					if (LSget('forgive-typos-pinyin-disable') === true) {
-						return true;
-					}
+    var givenArticle   = article(given);
+    var correctArticle = article(correct);
+    if (correctArticle && correctArticle !== givenArticle) {
+      return true;
+    }
 
-					var givenTones = tones(given);
-					if (givenTones.join() !== correctTones.join()) {
-						// If tones don't match; skip typo check, i.e. typo check
-						// should only apply for the pinyin
-						return true;
-					}
-				}
+    return false;
+  };
 
-				return false;
-			};
+  var prev_q;
+  var check_answers = function(input) {
+  var q = get_question();
+  if (q === prev_q) {
+    // Skip typo check the on second time regardless of given answer
+    return true;
+  }
 
-			if (handleChinese(given, correct)) {
-				return true;
-			}
-		} else if (category === 'French') {
-			var handleFrench = function(given, correct) {
-				var ARTICLES = [ 'le', 'la', 'les', 'un', 'une', 'des' ];
-				var regex    = new RegExp('\\b(' + ARTICLES.join('|') + ')\\b', 'gi');
-				var article  = function(str) {
-					var m = str.match(regex);
-					return m && m[0];
-				};
+    var given    = $(input).val();
+    //var correct  = get_thing_by_q(q).answer;
+    var acceptable = get_thing_by_q(q).acceptable;
+    var category = MEMRISE.garden.session.category.name;
 
-				var givenArticle   = article(given);
-				var correctArticle = article(correct);
-				if (correctArticle && correctArticle !== givenArticle) {
-					return true;
-				}
+    console.log(acceptable.length+" options: "+acceptable);
+    var bestDist = 100;
+    var bestDistAnswer = "";
+    for (i in acceptable) {
+      var correct = acceptable[i];
 
-				return false;
-			};
+      var nextDist = compare(given, correct);
+      if (bestDist == 0) return true;         //If given perfectly matches one of the alternatives
+      if (nextDist<bestDist) {
+        bestDist = nextDist;                  //Keep track of the smallest Levenshtein distance 
+        bestDistAnswer = correct;
+      }
+      prev_q = q;
+      
+    }  //for loop that chooses a new value for correct
 
-			if (handleFrench(given, correct)) {
-				return true;
-			}
-		}
-
-		var dist = compare(given, correct);
-		prev_q = q;
-
-		if (dist > 0 && dist <= 2) {
-			return false;
-		}
-
-		return true;
+    switch (category) {
+      case 'Chinese': if (skipAlertDueToChineseTones(  given, correct)) return true; break;
+      case 'French' : if (skipAlertDueToFrenchArticles(given, correct)) return true; break;
+    }
+    if (bestDist > 0 && bestDist <= 2) return false;  //Do not skip the warning popup
+		return true;                                      //Do skip the warning popup
 	};
 
+  
 	var handle_config = function(input) {
 		var given = $(input).val();
 		var has = function(str) {
@@ -190,11 +201,12 @@ var onLoad = function($) {
 
 		$('body').off('keydown');
 		$('body').on('keydown', function(e) {
-			try {
+			//try {
 				var copytyping = $('.garden-box').hasClass('copytyping');
 				if (!copytyping && $(e.target).is('input') && e.which === 13) {
 					if (handle_config(e.target)) return;
-					if (!check_answer(e.target)) {
+					if (!check_answers(e.target)) {
+            console.log("Show alert");
 						return alert('Close, did you make a typo? Try again.');
 					}
 				}
@@ -204,6 +216,7 @@ var onLoad = function($) {
 				console.log('error - falling back to default behavior', err);
 				trigger(e);
 			}
+      
 		});
 	};
 
