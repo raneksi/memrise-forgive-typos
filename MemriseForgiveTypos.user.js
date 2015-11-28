@@ -50,8 +50,9 @@ var onLoad = function($) {
 				var question = thing.columns[thinguser.column_b].val;
 				if ($.trim(question) === $.trim(str)) {
 					return {
-						answer   : thing.columns[thinguser.column_a].val,
-						question : thing.columns[thinguser.column_b].val
+						answer   	: thing.columns[thinguser.column_a].val,
+						alt_answers : thing.columns[thinguser.column_a].alts,
+						question 	: thing.columns[thinguser.column_b].val
 					};
 				}
 			}
@@ -90,6 +91,7 @@ var onLoad = function($) {
 
 		var given    = $(input).val();
 		var correct  = get_thing_by_q(q).answer;
+		var alt_answers = get_thing_by_q(q).alt_answers;
 		var category = MEMRISE.garden.session.category.name;
 
 		if (category === 'Chinese') {
@@ -143,10 +145,19 @@ var onLoad = function($) {
 			}
 		}
 
-		var dist = compare(given, correct);
+		var min_distance = compare(given, correct);
+
+		var i;
+		for(i = 0; i < alt_answers.length; i++) {
+			var dist = compare(given, alt_answers[i].replace('_',''));
+			if(dist < min_distance) {
+				min_distance = dist;
+			}
+		}
+
 		prev_q = q;
 
-		if (dist > 0 && dist <= 2) {
+		if (min_distance > 0 && min_distance <= 2) {
 			return false;
 		}
 
