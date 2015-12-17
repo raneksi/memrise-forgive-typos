@@ -149,9 +149,11 @@ var onLoad = function($) {
 
 		var i;
 		for(i = 0; i < alt_answers.length; i++) {
-			var dist = compare(given, alt_answers[i].replace('_',''));
-			if(dist < min_distance) {
-				min_distance = dist;
+			if (typeof alt_answers[i] === 'object' && alt_answers[i].val) {
+				var dist = compare(given, alt_answers[i].val.replace('_',''));
+				if(dist < min_distance) {
+					min_distance = dist;
+				}
 			}
 		}
 
